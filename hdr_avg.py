@@ -2,10 +2,13 @@ import os
 import glob
 from PIL import Image
 import numpy as np
+from skimage import io
 
-dirname = "D:\\C100824_025_old"
+dirname = "\\\\ProteowiseNAS\\Run Data\\Chetan\\C250919_059"
+save_dir = os.path.join(dirname, "Improc", "Test_Signal")
+if not os.path.exists(save_dir):
+    os.mkdir(save_dir)
 folders = []
-HDR = []
 N_sat = int(2**16 * .5) #N_sat = int(2**bit_depth * .5) with bit_depth = 12
 N_exp = 6 # number of exposures
 I_led = 12.4
@@ -16,23 +19,38 @@ for entry in os.listdir(dirname):
     if os.path.isdir(full_path):
         pattern = os.path.join(full_path, "*.tif")
         tif_files = glob.glob(pattern)
-        if len(tif_files) == 18:
+        if len(tif_files) == 54:
             folders.append(full_path)
 
 for folder in folders:
     tif_paths = glob.glob(os.path.join(folder, "*.tif"))
     tif_paths.sort(key=os.path.getmtime)
-    blank_image_paths = tif_paths[N_exp : 5*N_exp] #if skip_test_images else tif_paths[N_exp : 2*N_exp]
-    signal_image_paths = tif_paths[len(tif_paths) - 5*N_exp : len(tif_paths)]
+    #blank_image_paths = tif_paths[N_exp : 5*N_exp] #if skip_test_images else tif_paths[N_exp : 2*N_exp]
+    #signal_image_paths = tif_paths[len(tif_paths) - 5*N_exp : len(tif_paths)]
+    HDR = []
     for i in range(int(len(tif_paths)/6)):
-        print("it got here!!")
+        #print("it got here!!")
         images = [np.asarray(Image.open(x), dtype=np.float32) for x in tif_paths[i*6: (i*6)+6]]
         Acc = images[0] / (T_exp[0] * I_led * 10**-6)
         for i in range(1,N_exp):
             New_acc = images[i] / (T_exp[i] * I_led * 10**-6)
             Acc[images[i-1] > N_sat] = New_acc[images[i-1] > N_sat]
         HDR.append(Acc)
-    print(len(HDR))
+    Signal = []
+    for i in range(4):
+        Sig = HDR[5+i] - HDR[1+i]
+        Sig = Sig / 256
+        Sig[Sig < 0] = 0
+        Sig = Sig.round().astype(np.uint16)
+        Signal.append(Sig)
+    sum_signal = np.empty_like(Signal[0])
+    for i in range(len(Signal)):
+        sum_signal = sum_signal + Signal[i].astype(np.float32) if sum_signal.size != 0 else Signal[i]
+    Avg_Signal = sum_signal / len(Signal)
+    fileName = os.path.basename(os.path.dirname(folder)) + ' Signal' + '.tif'
+    io.imsave(os.path.join(save_dir,fileName), Avg_Signal.astype(np.uint16))
+
+
 
 #print(folders)
 

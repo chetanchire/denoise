@@ -2,10 +2,10 @@ import os
 import glob
 from PIL import Image
 import numpy as np
-from skimage import io
+from skimage import io, filters, morphology
 
 dirname = "\\\\ProteowiseNAS\\Run Data\\Chetan\\C250919_059"
-save_dir = os.path.join(dirname, "Improc", "Test_Signal")
+save_dir = os.path.join(dirname, "Improc", "Test_Signal1")
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 folders = []
@@ -30,7 +30,8 @@ for folder in folders:
     HDR = []
     for i in range(int(len(tif_paths)/6)):
         #print("it got here!!")
-        images = [np.asarray(Image.open(x), dtype=np.float32) for x in tif_paths[i*6: (i*6)+6]]
+        raw_images = [np.asarray(Image.open(x), dtype=np.float32) for x in tif_paths[i*6: (i*6)+6]]
+        images = [np.asarray(filters.median(raw, footprint = morphology.disk(7)), dtype = np.float32) for raw in raw_images]
         Acc = images[0] / (T_exp[0] * I_led * 10**-6)
         for i in range(1,N_exp):
             New_acc = images[i] / (T_exp[i] * I_led * 10**-6)

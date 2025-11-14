@@ -3,7 +3,7 @@ import glob, os, random
 from PIL import Image
 import scipy.sparse as sp
 
-"""Rev: 251113-01"""
+Rev = '251113-01'
 
 def w(Z):
     """ 
@@ -123,7 +123,7 @@ Z, B, raw_imgs = pixel_values(tif_paths[0:5], expos, 30000)
 g, lE = gsolve_scipy(Z, B, 2, w)
 HDR_pic = construct_HDR(g, raw_imgs, expos)
 HDR_pic1 = Image.fromarray(HDR_pic)
-HDR_pic1.save("HDR_C251023_016_1.tif")
+HDR_pic1.save(Rev+"HDR_C251023_016_1.tif")
 """
 Z, B, raw_imgs = pixel_values(tif_paths[6:11], expos, 30000)
 g, lE = gsolve_scipy(Z, B, 2, w)

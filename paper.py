@@ -1,9 +1,12 @@
 import numpy as np
-import glob, os, random
+import glob, os, random, cupy, time
 from PIL import Image
 import scipy.sparse as sp
+from datetime import datetime
+import cupyx.scipy.sparse as cusp
+import cupyx.scipy.sparse.linalg as cusplin
 
-Rev = '251113-01'
+Rev = '251114-01'
 
 def w(Z):
     """ 
@@ -12,8 +15,7 @@ def w(Z):
     Returns Z - Zmin if Z is less than or equal to (Zmin - Zmax)/2
     Other wise it returns Zmax - Z
     """
-    # return Z if Z <= 32767 else (65535-Z)
-    return (Z/32767) if Z <= 32767 else ((65535-Z)/32767)
+    return np.where(Z <= 32767, Z/32767, ((65535 - Z)/32767))
 
 def pixel_values(tif_paths, exposures, pixels):
     """
@@ -28,8 +30,6 @@ def pixel_values(tif_paths, exposures, pixels):
     # tif_paths = glob.glob(os.path.join(folder, "*.tif"))
     pixel_vec = sorted(random.sample(range(0, 12288000), pixels))
     rows = len(tif_paths)
-    # image_array = np.asarray(Image.open(tif_paths[0]), dtype = np.float32).shape
-    # columns = image_array[0]*image_array[1]
     Z = np.zeros((pixels, rows), dtype = np.float32)
     B = np.zeros((pixels, rows), dtype = np.float32)
     raw_images = []
@@ -38,11 +38,13 @@ def pixel_values(tif_paths, exposures, pixels):
         Z[:, i] = raw_img[pixel_vec]
         B[:, i] = np.log(exposures[i])
         raw_images.append(raw_img)
-    return Z, B, np.array(raw_images)
+    return Z, B, np.array(raw_images).astype(int)
 
-def gsolve_scipy(Z, B, l, w):
+def gsolve_cusp(Z, B, l, w):
     """
     From paper: https://icg.gwu.edu/sites/g/files/zaxdzs6126/files/downloads/Recovering%20high%20dynamic%20range%20radiance%20maps%20from%20photographs.pdf
+    # x = sp.linalg.lsqr(A, b.toarray())
+	# x = sp.linalg.lsmr(A, b.toarray(), atol=1e-09, btol=1e-09)
     """
     n = 65536
     Z = Z.astype(int)
@@ -63,23 +65,24 @@ def gsolve_scipy(Z, B, l, w):
         A[k, i] = l * w(i+1);   A[k, i+1] = -2 * l * w(i+1);    A[k, i+2] = l * w(i+1)
         k = k + 1
     
-    x = sp.linalg.lsqr(A, b.toarray())
-    g = x[0][0:n-1];    lE = x[0][n:len(x[0])-1]
+    if cupy.is_available:
+        gpu_A = cusp.csr_matrix(A);	gpu_b = cusp.csr_matrix(b)
+        x = cusplin.lsmr(gpu_A, gpu_b.toarray(), atol=1e-09, btol=1e-09)
+        g = x[0][0:n];				g = g.get()
+        lE = x[0][n:len(x[0])];		lE = lE.get()
+    else:
+         x = sp.linalg.lsmr(sp.csr_matrix(A), b.toarray(), atol=1e-09, btol=1e-09) 
+         g = x[0][0:n];	lE = x[0][n:len(x[0])]
 
-    return g, lE
+    return g, lE, x
 
 def construct_HDR(g, raw_images, exposures):
-    HDR_img = np.zeros((len(raw_images[0]), 1), dtype=np.float32)
-    raw_images = raw_images.astype(int)
-    num = 0;    den = 0
-    for i in range(raw_images.shape[1]):
-        for j in range(raw_images.shape[0]):
-            num = num + w(raw_images[j, i]) * (g[raw_images[j,i]] - np.log(exposures[j]))
-            den = den + w(raw_images[j, i])
-            if j == raw_images.shape[0]-1:
-                HDR_img[i, 0] = np.exp(num / den)
-                num = 0;    den = 0
-    #HDR_pic = HDR_img.reshape((3000, 4096))
+    weights = w(raw_images)
+    g_vals = g[raw_images]
+    log_exp = np.log(exposures)[:, None]
+    num = np.sum(weights * (g_vals - log_exp), axis=0)
+    den = np.sum(weights, axis=0)
+    HDR_img = np.exp(num / den)
     HDR_img = HDR_img * (2**12)
     HDR_pic = HDR_img.reshape((3000, 4096))
     HDR_pic = HDR_pic.round().astype(np.uint16)
@@ -100,14 +103,16 @@ for i in range(int(len(acquisitions)/2)):
     blank_substracted[blank_substracted < 1] = 1
     blank_substracted = blank_substracted.round().astype(np.uint16)
     savefile = Image.fromarray(blank_substracted)
-    fname = "signal"+str(i)+'.tif'
+    fname = "signal_"+str(i)+'.tif'
     savefile.save(fname)
-
+time.sleep(2)
 tif_paths = glob.glob("signal*.tif")
 tif_paths.sort(key=os.path.getmtime)
 expos = [7.272, 3.636, 1.818, 0.909, 0.455, 0.228]
-Z, B, raw_imgs = pixel_values(tif_paths[0:5], expos, 30000)
-g, lE = gsolve_scipy(Z, B, 2, w)
+Z, B, raw_imgs = pixel_values(tif_paths, expos, 30000)
+g, lE, x = gsolve_cusp(Z, B, 2, w)
 HDR_pic = construct_HDR(g, raw_imgs, expos)
 HDR_pic1 = Image.fromarray(HDR_pic)
-HDR_pic1.save("HDR_C251023_016_1.tif")
+now = datetime.now()
+timestamp_str = now.strftime("%Y%m%d_%H%M")
+HDR_pic1.save(f"HDR_{Rev}_{timestamp_str}.tif")

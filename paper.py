@@ -84,19 +84,7 @@ def construct_HDR(g, raw_images, exposures):
     HDR_pic = HDR_img.reshape((3000, 4096))
     HDR_pic = HDR_pic.round().astype(np.uint16)
     return HDR_pic
-"""
-tif_paths = glob.glob("Images/*.tif")
-tif_paths.sort(key=os.path.getmtime)
-images = []
-acquisitions = [6, 7, 8, 9, 10, 11, 30, 31, 32, 33, 34, 35]
-images = [np.asarray(Image.open(x), dtype=np.float32) for x in tif_paths]
-for i in range(len(acquisitions)):
-    average_img = (images[acquisitions[i]] + images[acquisitions[i]+6]
-                   + images[acquisitions[i]+12] + images[acquisitions[i]+18])/4
-    savefile = Image.fromarray(average_img.astype(np.uint16))
-    fname = 'Average' + str(i) +'.tif'
-    savefile.save(fname)
-"""
+
 tif_paths = glob.glob("Images/*.tif")
 tif_paths.sort(key=os.path.getmtime)
 images = []
@@ -109,7 +97,6 @@ for i in range(int(len(acquisitions)/2)):
                    + images[acquisitions[i+6]+12] + images[acquisitions[i+6]+18])/4
     blank_substracted = avg_sig_img - avg_blank_img
     blank_substracted = np.array(blank_substracted)
-    #blank_substracted[blank_substracted < 0] = 0
     blank_substracted[blank_substracted < 1] = 1
     blank_substracted = blank_substracted.round().astype(np.uint16)
     savefile = Image.fromarray(blank_substracted)
@@ -124,13 +111,7 @@ g, lE = gsolve_scipy(Z, B, 2, w)
 HDR_pic = construct_HDR(g, raw_imgs, expos)
 HDR_pic1 = Image.fromarray(HDR_pic)
 HDR_pic1.save("HDR_C251023_016_1.tif")
-"""
-Z, B, raw_imgs = pixel_values(tif_paths[6:11], expos, 30000)
-g, lE = gsolve_scipy(Z, B, 2, w)
-HDR_pic = construct_HDR(g, raw_imgs, expos)
-HDR_pic1 = Image.fromarray(HDR_pic)
-HDR_pic1.save("HDR20_C251023_016_Signal.tif")
-"""
+
 
 def gsolve(Z, B, l, w):
     """
